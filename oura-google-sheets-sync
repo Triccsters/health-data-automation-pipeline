@@ -1,0 +1,46 @@
+import requests
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# --- SETTINGS ---
+OURA_TOKEN = "YOUR_OURA_TOKEN_HERE"
+SHEET_NAME = "Oura Data Sync" # Must match your Sheet name exactly
+JSON_FILE = "creds.json.json"      # Must be on your Desktop with the script
+
+def sync_to_google_sheets():
+    # 1. Connect to Oura
+    base_url = "https://api.ouraring.com/v2/usercollection"
+    headers = {"Authorization": f"Bearer {OURA_TOKEN}"}
+    
+    print("Fetching Oura summaries...")
+    # Get the big three buckets
+    readiness = requests.get(f"{base_url}/daily_readiness", headers=headers).json()['data'][-1]
+    sleep = requests.get(f"{base_url}/daily_sleep", headers=headers).json()['data'][-1]
+    activity = requests.get(f"{base_url}/daily_activity", headers=headers).json()['data'][-1]
+
+    # 2. Log in to Google Sheets
+    print("Logging into Google Sheets...")
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_FILE, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open(SHEET_NAME).sheet1
+
+    # 3. Prepare the data row
+    # Order: Date, Readiness, Sleep, Activity, Cal, Steps, HRV, Temp
+    new_row = [
+        readiness['day'],
+        readiness['score'],
+        sleep['score'],
+        activity['score'],
+        activity['active_calories'],
+        activity['steps'],
+        readiness['contributors']['hrv_balance'],
+        readiness['temperature_deviation']
+    ]
+
+    # 4. Append and Finish
+    sheet.append_row(new_row)
+    print(f"DONE! Data for {readiness['day']} added to '{SHEET_NAME}'.")
+
+if __name__ == "__main__":
+    sync_to_google_sheets()
